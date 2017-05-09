@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IEditorOptions } from 'vs/editor/common/editorCommon';
+import { IEditorOptions } from 'vs/editor/common/config/editorOptions';
 import { EditorAction, CommonEditorRegistry } from 'vs/editor/common/editorCommonExtensions';
 import { ICodeEditorService } from 'vs/editor/common/services/codeEditorService';
 import { IEditorContributionCtor } from 'vs/editor/browser/editorBrowser';
@@ -18,7 +18,7 @@ import { SelectionClipboard } from 'vs/editor/contrib/selectionClipboard/electro
 import { ContextMenuController } from 'vs/editor/contrib/contextmenu/browser/contextmenu';
 import { SuggestController } from 'vs/editor/contrib/suggest/browser/suggestController';
 import { SnippetController } from 'vs/editor/contrib/snippet/common/snippetController';
-import { TabCompletionController } from 'vs/editor/contrib/suggest/browser/tabCompletion';
+import { TabCompletionController } from 'vs/workbench/parts/snippets/electron-browser/tabCompletion';
 
 export class ReplInputEditor extends CodeEditorWidget {
 	constructor(

@@ -15,7 +15,7 @@ export class MockDebugService implements debug.IDebugService {
 		return null;
 	}
 
-	public get onDidChangeState(): Event<void> {
+	public get onDidChangeState(): Event<debug.State> {
 		return null;
 	}
 
@@ -71,11 +71,19 @@ export class MockDebugService implements debug.IDebugService {
 
 	public removeWatchExpressions(id?: string): void { }
 
-	public createProcess(configurationOrName: debug.IConfig | string): TPromise<any> {
+	public startDebugging(configName?: string, noDebug?: boolean): TPromise<any> {
+		return TPromise.as(null);
+	}
+
+	public createProcess(config: debug.IConfig): TPromise<any> {
 		return TPromise.as(null);
 	}
 
 	public restartProcess(): TPromise<any> {
+		return TPromise.as(null);
+	}
+
+	public stopProcess(): TPromise<any> {
 		return TPromise.as(null);
 	}
 
@@ -86,6 +94,8 @@ export class MockDebugService implements debug.IDebugService {
 	public getViewModel(): debug.IViewModel {
 		return null;
 	}
+
+	public logToRepl(value: string): void { }
 
 	public deemphasizeSource(uri: uri): void { }
 }
@@ -110,6 +120,15 @@ export class MockSession implements debug.ISession {
 		});
 	}
 
+	public exceptionInfo(args: DebugProtocol.ExceptionInfoArguments): TPromise<DebugProtocol.ExceptionInfoResponse> {
+		return TPromise.as({
+			body: {
+				exceptionId: 'mockExceptionId',
+				breakMode: 'unhandled'
+			}
+		});
+	}
+
 	public attach(args: DebugProtocol.AttachRequestArguments): TPromise<DebugProtocol.AttachResponse> {
 		return TPromise.as(null);
 	}
@@ -126,11 +145,8 @@ export class MockSession implements debug.ISession {
 		return TPromise.as(null);
 	}
 
-	public get configuration(): { type: string, capabilities: DebugProtocol.Capabilities } {
-		return {
-			type: 'mock',
-			capabilities: {}
-		};
+	public get capabilities(): DebugProtocol.Capabilities {
+		return {};
 	}
 
 	public get onDidEvent(): Event<DebugProtocol.Event> {

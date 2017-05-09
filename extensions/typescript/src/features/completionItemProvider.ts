@@ -22,13 +22,14 @@ class MyCompletionItem extends CompletionItem {
 		public position: Position,
 		public document: TextDocument,
 		entry: CompletionEntry,
-		enableDotCompletions: boolean
+		enableDotCompletions: boolean,
+		enableCallCompletions: boolean
 	) {
 		super(entry.name);
 		this.sortText = entry.sortText;
 		this.kind = MyCompletionItem.convertKind(entry.kind);
 		this.position = position;
-		this.commitCharacters = MyCompletionItem.getCommitCharacters(enableDotCompletions, entry.kind);
+		this.commitCharacters = MyCompletionItem.getCommitCharacters(enableDotCompletions, enableCallCompletions, entry.kind);
 		if (entry.replacementSpan) {
 			let span: protocol.TextSpan = entry.replacementSpan;
 			// The indexing for the range returned by the server uses 1-based indexing.
@@ -54,20 +55,23 @@ class MyCompletionItem extends CompletionItem {
 			case PConst.Kind.keyword:
 				return CompletionItemKind.Keyword;
 			case PConst.Kind.const:
+				return CompletionItemKind.Constant;
 			case PConst.Kind.let:
 			case PConst.Kind.variable:
 			case PConst.Kind.localVariable:
+			case PConst.Kind.alias:
 				return CompletionItemKind.Variable;
 			case PConst.Kind.memberVariable:
 			case PConst.Kind.memberGetAccessor:
 			case PConst.Kind.memberSetAccessor:
 				return CompletionItemKind.Field;
 			case PConst.Kind.function:
+				return CompletionItemKind.Function;
 			case PConst.Kind.memberFunction:
 			case PConst.Kind.constructSignature:
 			case PConst.Kind.callSignature:
 			case PConst.Kind.indexSignature:
-				return CompletionItemKind.Function;
+				return CompletionItemKind.Method;
 			case PConst.Kind.enum:
 				return CompletionItemKind.Enum;
 			case PConst.Kind.module:
@@ -85,18 +89,17 @@ class MyCompletionItem extends CompletionItem {
 			case PConst.Kind.directory:
 				return CompletionItemKind.Folder;
 		}
-
 		return CompletionItemKind.Property;
 	}
 
-	private static getCommitCharacters(enableDotCompletions: boolean, kind: string): string[] | undefined {
+	private static getCommitCharacters(enableDotCompletions: boolean, enableCallCompletions: boolean, kind: string): string[] | undefined {
 		switch (kind) {
 			case PConst.Kind.externalModuleName:
 				return ['"', '\''];
 
 			case PConst.Kind.file:
 			case PConst.Kind.directory:
-				return ['/', '"', '\''];
+				return ['"', '\''];
 
 			case PConst.Kind.memberGetAccessor:
 			case PConst.Kind.memberSetAccessor:
@@ -117,7 +120,7 @@ class MyCompletionItem extends CompletionItem {
 			case PConst.Kind.class:
 			case PConst.Kind.function:
 			case PConst.Kind.memberFunction:
-				return enableDotCompletions ? ['.', '('] : undefined;
+				return enableDotCompletions ? (enableCallCompletions ? ['.', '('] : ['.']) : undefined;
 		}
 
 		return undefined;
@@ -152,8 +155,12 @@ export default class TypeScriptCompletionItemProvider implements CompletionItemP
 	public provideCompletionItems(document: TextDocument, position: Position, token: CancellationToken): Promise<CompletionItem[]> {
 		if (this.typingsStatus.isAcquiringTypings) {
 			return Promise.reject<CompletionItem[]>({
-				label: localize('acquiringTypingsLabel', 'Acquiring typings...'),
-				detail: localize('acquiringTypingsDetail', 'Acquiring typings definitions for IntelliSense.')
+				label: localize(
+					{ key: 'acquiringTypingsLabel', comment: ['Typings refers to the *.d.ts typings files that power our IntelliSense. It should not be localized'] },
+					'Acquiring typings...'),
+				detail: localize(
+					{ key: 'acquiringTypingsDetail', comment: ['Typings refers to the *.d.ts typings files that power our IntelliSense. It should not be localized'] },
+					'Acquiring typings definitions for IntelliSense.')
 			});
 		}
 
@@ -202,7 +209,7 @@ export default class TypeScriptCompletionItemProvider implements CompletionItemP
 
 				for (let i = 0; i < body.length; i++) {
 					const element = body[i];
-					const item = new MyCompletionItem(position, document, element, enableDotCompletions);
+					const item = new MyCompletionItem(position, document, element, enableDotCompletions, !this.config.useCodeSnippetsOnMethodSuggest);
 					completionItems.push(item);
 				}
 			}

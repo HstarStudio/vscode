@@ -22,7 +22,8 @@ const options: minimist.Opts = {
 		'debugBrkPluginHost',
 		'debugPluginHost',
 		'open-url',
-		'prof-startup-timers'
+		'prof-startup-timers',
+		'enable-proposed-api'
 	],
 	boolean: [
 		'help',
@@ -31,9 +32,10 @@ const options: minimist.Opts = {
 		'diff',
 		'goto',
 		'new-window',
-		'new-window-if-not-first',
+		'unity-launch',
 		'reuse-window',
 		'performance',
+		'prof-startup',
 		'verbose',
 		'logExtensionHostCommunication',
 		'disable-extensions',
@@ -112,6 +114,7 @@ export const optionsHelp: { [name: string]: string; } = {
 	'--locale <locale>': localize('locale', "The locale to use (e.g. en-US or zh-TW)."),
 	'-n, --new-window': localize('newWindow', "Force a new instance of Code."),
 	'-p, --performance': localize('performance', "Start with the 'Developer: Startup Performance' command enabled."),
+	'--prof-startup': localize('prof-startup', "Run CPU profiler during startup"),
 	'-r, --reuse-window': localize('reuseWindow', "Force opening a file or folder in the last active window."),
 	'--user-data-dir <dir>': localize('userDataDir', "Specifies the directory that user data is kept in, useful when running as root."),
 	'--verbose': localize('verbose', "Print verbose output (implies --wait)."),
@@ -121,6 +124,7 @@ export const optionsHelp: { [name: string]: string; } = {
 	'--show-versions': localize('showVersions', "Show versions of installed extensions, when using --list-extension."),
 	'--install-extension <ext>': localize('installExtension', "Installs an extension."),
 	'--uninstall-extension <ext>': localize('uninstallExtension', "Uninstalls an extension."),
+	'--enable-proposed-api <ext>': localize('experimentalApis', "Enables proposed api features for an extension."),
 	'--disable-extensions': localize('disableExtensions', "Disable all installed extensions."),
 	'--disable-gpu': localize('disableGPU', "Disable GPU hardware acceleration."),
 	'-v, --version': localize('version', "Print version."),

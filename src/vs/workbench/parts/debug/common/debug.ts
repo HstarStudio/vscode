@@ -3,23 +3,27 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as nls from 'vs/nls';
 import uri from 'vs/base/common/uri';
 import { TPromise } from 'vs/base/common/winjs.base';
+import severity from 'vs/base/common/severity';
 import Event from 'vs/base/common/event';
 import { IJSONSchemaSnippet } from 'vs/base/common/jsonSchema';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { IModel as EditorIModel, IEditorContribution, IRange } from 'vs/editor/common/editorCommon';
+import { IModel as EditorIModel, IEditorContribution } from 'vs/editor/common/editorCommon';
 import { IEditor } from 'vs/platform/editor/common/editor';
 import { Position } from 'vs/editor/common/core/position';
 import { ISuggestion } from 'vs/editor/common/modes';
 import { Source } from 'vs/workbench/parts/debug/common/debugSource';
-import { Range } from 'vs/editor/common/core/range';
+import { Range, IRange } from 'vs/editor/common/core/range';
 import { RawContextKey, ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 
 export const VIEWLET_ID = 'workbench.view.debug';
 export const REPL_ID = 'workbench.panel.repl';
 export const DEBUG_SERVICE_ID = 'debugService';
+export const CONTEXT_DEBUG_TYPE = new RawContextKey<string>('debugType', undefined);
+export const CONTEXT_DEBUG_STATE = new RawContextKey<string>('debugState', undefined);
 export const CONTEXT_IN_DEBUG_MODE = new RawContextKey<boolean>('inDebugMode', false);
 export const CONTEXT_NOT_IN_DEBUG_MODE: ContextKeyExpr = CONTEXT_IN_DEBUG_MODE.toNegated();
 export const CONTEXT_IN_DEBUG_REPL = new RawContextKey<boolean>('inDebugRepl', false);
@@ -27,9 +31,17 @@ export const CONTEXT_NOT_IN_DEBUG_REPL: ContextKeyExpr = CONTEXT_IN_DEBUG_REPL.t
 export const CONTEXT_ON_FIRST_DEBUG_REPL_LINE = new RawContextKey<boolean>('onFirsteDebugReplLine', false);
 export const CONTEXT_ON_LAST_DEBUG_REPL_LINE = new RawContextKey<boolean>('onLastDebugReplLine', false);
 export const CONTEXT_BREAKPOINT_WIDGET_VISIBLE = new RawContextKey<boolean>('breakpointWidgetVisible', false);
+export const CONTEXT_BREAKPOINTS_FOCUSED = new RawContextKey<boolean>('breakpointsFocused', false);
+export const CONTEXT_WATCH_EXPRESSIONS_FOCUSED = new RawContextKey<boolean>('watchExpressionsFocused', false);
+export const CONTEXT_VARIABLES_FOCUSED = new RawContextKey<boolean>('variablesFocused', false);
 
 export const EDITOR_CONTRIBUTION_ID = 'editor.contrib.debug';
 export const DEBUG_SCHEME = 'debug';
+export const INTERNAL_CONSOLE_OPTIONS_SCHEMA = {
+	enum: ['neverOpen', 'openOnSessionStart', 'openOnFirstSessionStart'],
+	default: 'openOnFirstSessionStart',
+	description: nls.localize('internalConsoleOptions', "Controls behavior of the internal debug console.")
+};
 
 // raw
 
@@ -44,6 +56,7 @@ export interface IRawModelUpdate {
 
 export interface IRawStoppedDetails {
 	reason: string;
+	description?: string;
 	threadId?: number;
 	text?: string;
 	totalFrames?: number;
@@ -70,15 +83,16 @@ export interface IExpression extends ITreeElement, IExpressionContainer {
 
 export interface ISession {
 	stackTrace(args: DebugProtocol.StackTraceArguments): TPromise<DebugProtocol.StackTraceResponse>;
+	exceptionInfo(args: DebugProtocol.ExceptionInfoArguments): TPromise<DebugProtocol.ExceptionInfoResponse>;
 	scopes(args: DebugProtocol.ScopesArguments): TPromise<DebugProtocol.ScopesResponse>;
 	variables(args: DebugProtocol.VariablesArguments): TPromise<DebugProtocol.VariablesResponse>;
 	evaluate(args: DebugProtocol.EvaluateArguments): TPromise<DebugProtocol.EvaluateResponse>;
 
-	configuration: { type: string, capabilities: DebugProtocol.Capabilities };
+	capabilities: DebugProtocol.Capabilities;
 	disconnect(restart?: boolean, force?: boolean): TPromise<DebugProtocol.DisconnectResponse>;
 	custom(request: string, args: any): TPromise<DebugProtocol.Response>;
 	onDidEvent: Event<DebugProtocol.Event>;
-	restartFrame(args: DebugProtocol.RestartFrameArguments): TPromise<DebugProtocol.RestartFrameResponse>;
+	restartFrame(args: DebugProtocol.RestartFrameArguments, threadId: number): TPromise<DebugProtocol.RestartFrameResponse>;
 
 	next(args: DebugProtocol.NextArguments): TPromise<DebugProtocol.NextResponse>;
 	stepIn(args: DebugProtocol.StepInArguments): TPromise<DebugProtocol.StepInResponse>;
@@ -97,6 +111,7 @@ export interface IProcess extends ITreeElement {
 	name: string;
 	configuration: IConfig;
 	session: ISession;
+	sources: Map<string, Source>;
 	isAttach(): boolean;
 	getThread(threadId: number): IThread;
 	getAllThreads(): IThread[];
@@ -124,6 +139,11 @@ export interface IThread extends ITreeElement {
 	 * Information about the current thread stop event. Null if thread is not stopped.
 	 */
 	stoppedDetails: IRawStoppedDetails;
+
+	/**
+	 * Information about the exception if an 'exception' stopped event raised and DA supports the 'exceptionInfo' request, otherwise null.
+	 */
+	exceptionInfo: TPromise<IExceptionInfo>;
 
 	/**
 	 * Gets the callstack if it has already been received from the debug
@@ -206,6 +226,13 @@ export interface IExceptionBreakpoint extends IEnablement {
 	label: string;
 }
 
+export interface IExceptionInfo {
+	id?: string;
+	description?: string;
+	breakMode: string;
+	details?: DebugProtocol.ExceptionDetails;
+}
+
 // model interfaces
 
 export interface IViewModel extends ITreeElement {
@@ -272,6 +299,8 @@ export interface IDebugConfiguration {
 	allowBreakpointsEverywhere: boolean;
 	openExplorerOnEnd: boolean;
 	inlineValues: boolean;
+	hideActionBar: boolean;
+	internalConsoleOptions: string;
 }
 
 export interface IGlobalConfig {
@@ -286,6 +315,7 @@ export interface IEnvConfig {
 	request: string;
 	internalConsoleOptions?: string;
 	preLaunchTask?: string;
+	__restart?: boolean;
 	debugServer?: number;
 	noDebug?: boolean;
 	port?: number;
@@ -359,6 +389,8 @@ export interface IConfigurationManager {
 	 */
 	getCompound(name: string): ICompound;
 
+	configFileUri: uri;
+
 	/**
 	 * Opens the launch.json file. Creates if it does not exist.
 	 */
@@ -392,7 +424,7 @@ export interface IDebugService {
 	/**
 	 * Allows to register on debug state changes.
 	 */
-	onDidChangeState: Event<void>;
+	onDidChangeState: Event<State>;
 
 	/**
 	 * Gets the current configuration manager.
@@ -455,6 +487,11 @@ export interface IDebugService {
 	removeReplExpressions(): void;
 
 	/**
+	 * Appends the passed string to the debug repl.
+	 */
+	logToRepl(value: string, sev?: severity): void;
+
+	/**
 	 * Adds a new watch expression and evaluates it against the debug adapter.
 	 */
 	addWatchExpression(name?: string): TPromise<void>;
@@ -475,14 +512,26 @@ export interface IDebugService {
 	removeWatchExpressions(id?: string): void;
 
 	/**
+	 * Starts debugging. If the configName is not passed uses the selected configuration in the debug dropdown.
+	 * Also saves all files, manages if compounds are present in the configuration
+	 * and calls the startSessionCommand if an adapter registered it.
+	 */
+	startDebugging(configName?: string, noDebug?: boolean): TPromise<any>;
+
+	/**
 	 * Creates a new debug process. Depending on the configuration will either 'launch' or 'attach'.
 	 */
-	createProcess(configurationOrName: IConfig | string): TPromise<any>;
+	createProcess(config: IConfig): TPromise<any>;
 
 	/**
 	 * Restarts a process or creates a new one if there is no active session.
 	 */
 	restartProcess(process: IProcess): TPromise<any>;
+
+	/**
+	 * Stops the process. If the process does not exist then stops all processes.
+	 */
+	stopProcess(process: IProcess): TPromise<any>;
 
 	/**
 	 * Deemphasizes all sources with the passed uri. Source will appear as grayed out in callstack view.
@@ -503,7 +552,7 @@ export interface IDebugService {
 // Editor interfaces
 export interface IDebugEditorContribution extends IEditorContribution {
 	showHover(range: Range, focus: boolean): TPromise<void>;
-	showBreakpointWidget(lineNumber: number): void;
+	showBreakpointWidget(lineNumber: number, column: number): void;
 	closeBreakpointWidget(): void;
 	addLaunchConfiguration(): TPromise<any>;
 }

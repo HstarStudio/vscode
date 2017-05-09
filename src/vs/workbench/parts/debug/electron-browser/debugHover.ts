@@ -11,8 +11,8 @@ import * as dom from 'vs/base/browser/dom';
 import { ITree } from 'vs/base/parts/tree/browser/tree';
 import { Tree } from 'vs/base/parts/tree/browser/treeImpl';
 import { IKeyboardEvent } from 'vs/base/browser/keyboardEvent';
-import { DefaultController, ICancelableEvent } from 'vs/base/parts/tree/browser/treeDefaults';
-import { IConfigurationChangedEvent } from 'vs/editor/common/editorCommon';
+import { DefaultController, ICancelableEvent, ClickBehavior } from 'vs/base/parts/tree/browser/treeDefaults';
+import { IConfigurationChangedEvent } from 'vs/editor/common/config/editorOptions';
 import { Position } from 'vs/editor/common/core/position';
 import { Range } from 'vs/editor/common/core/range';
 import { IContentWidget, ICodeEditor, IContentWidgetPosition, ContentWidgetPositionPreference } from 'vs/editor/browser/editorBrowser';
@@ -20,6 +20,9 @@ import { IInstantiationService } from 'vs/platform/instantiation/common/instanti
 import { IDebugService, IExpression, IExpressionContainer } from 'vs/workbench/parts/debug/common/debug';
 import { Expression } from 'vs/workbench/parts/debug/common/debugModel';
 import { VariablesRenderer, renderExpressionValue, VariablesDataSource } from 'vs/workbench/parts/debug/electron-browser/debugViewer';
+import { IListService } from 'vs/platform/list/browser/listService';
+import { attachListStyler } from 'vs/platform/theme/common/styler';
+import { IThemeService } from 'vs/platform/theme/common/themeService';
 
 const $ = dom.$;
 const MAX_ELEMENTS_SHOWN = 18;
@@ -43,7 +46,13 @@ export class DebugHoverWidget implements IContentWidget {
 	private stoleFocus: boolean;
 	private toDispose: lifecycle.IDisposable[];
 
-	constructor(private editor: ICodeEditor, private debugService: IDebugService, instantiationService: IInstantiationService) {
+	constructor(
+		private editor: ICodeEditor,
+		private debugService: IDebugService,
+		private listService: IListService,
+		instantiationService: IInstantiationService,
+		private themeService: IThemeService
+	) {
 		this.toDispose = [];
 		this.create(instantiationService);
 		this.registerListeners();
@@ -73,15 +82,19 @@ export class DebugHoverWidget implements IContentWidget {
 		}, {
 				indentPixels: 6,
 				twistiePixels: 15,
-				ariaLabel: nls.localize('treeAriaLabel', "Debug Hover")
+				ariaLabel: nls.localize('treeAriaLabel', "Debug Hover"),
+				keyboardSupport: false
 			});
+
+		this.toDispose.push(attachListStyler(this.tree, this.themeService));
+		this.toDispose.push(this.listService.register(this.tree));
 	}
 
 	private registerListeners(): void {
-		this.toDispose.push(this.tree.addListener2('item:expanded', () => {
+		this.toDispose.push(this.tree.addListener('item:expanded', () => {
 			this.layoutTree();
 		}));
-		this.toDispose.push(this.tree.addListener2('item:collapsed', () => {
+		this.toDispose.push(this.tree.addListener('item:collapsed', () => {
 			this.layoutTree();
 		}));
 
@@ -160,8 +173,12 @@ export class DebugHoverWidget implements IContentWidget {
 		const expressionRange = this.getExactExpressionRange(lineContent, range);
 		// use regex to extract the sub-expression #9821
 		const matchingExpression = lineContent.substring(expressionRange.startColumn - 1, expressionRange.endColumn);
+		if (!matchingExpression) {
+			return TPromise.as(this.hide());
+		}
+
 		let promise: TPromise<IExpression>;
-		if (process.session.configuration.capabilities.supportsEvaluateForHovers) {
+		if (process.session.capabilities.supportsEvaluateForHovers) {
 			const result = new Expression(matchingExpression);
 			promise = result.evaluate(process, this.debugService.getViewModel().focusedStackFrame, 'hover').then(() => result);
 		} else {
@@ -186,6 +203,10 @@ export class DebugHoverWidget implements IContentWidget {
 	}
 
 	private doFindExpression(container: IExpressionContainer, namesToFind: string[]): TPromise<IExpression> {
+		if (!container) {
+			return TPromise.as(null);
+		}
+
 		return container.getChildren().then(children => {
 			// look for our variable in the list. First find the parents of the hovered variable if there are any.
 			const filtered = children.filter(v => namesToFind[0] === v.name);
@@ -298,7 +319,7 @@ export class DebugHoverWidget implements IContentWidget {
 class DebugHoverController extends DefaultController {
 
 	constructor(private editor: ICodeEditor) {
-		super();
+		super({ clickBehavior: ClickBehavior.ON_MOUSE_UP, keyboardSupport: false });
 	}
 
 	protected onLeftClick(tree: ITree, element: any, eventish: ICancelableEvent, origin = 'mouse'): boolean {

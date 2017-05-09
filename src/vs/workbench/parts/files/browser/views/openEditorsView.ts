@@ -11,6 +11,7 @@ import { IAction, IActionRunner } from 'vs/base/common/actions';
 import dom = require('vs/base/browser/dom');
 import { CollapsibleState } from 'vs/base/browser/ui/splitview/splitview';
 import { Tree } from 'vs/base/parts/tree/browser/treeImpl';
+import { IItemCollapseEvent } from 'vs/base/parts/tree/browser/treeModel';
 import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
@@ -28,6 +29,11 @@ import { IUntitledEditorService } from 'vs/workbench/services/untitled/common/un
 import { CloseAllEditorsAction } from 'vs/workbench/browser/parts/editor/editorActions';
 import { ToggleEditorLayoutAction } from 'vs/workbench/browser/actions/toggleEditorLayout';
 import { IContextKeyService, IContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { IListService } from 'vs/platform/list/browser/listService';
+import { EditorGroup } from 'vs/workbench/common/editor/editorStacksModel';
+import { attachListStyler, attachStylerCallback } from 'vs/platform/theme/common/styler';
+import { IThemeService } from 'vs/platform/theme/common/themeService';
+import { badgeBackground, badgeForeground, badgeBorder } from "vs/platform/theme/common/colorRegistry";
 
 const $ = dom.$;
 
@@ -58,9 +64,11 @@ export class OpenEditorsView extends AdaptiveCollapsibleViewletView {
 		@IEditorGroupService editorGroupService: IEditorGroupService,
 		@IConfigurationService private configurationService: IConfigurationService,
 		@IKeybindingService keybindingService: IKeybindingService,
+		@IListService private listService: IListService,
 		@IUntitledEditorService private untitledEditorService: IUntitledEditorService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IViewletService private viewletService: IViewletService
+		@IViewletService private viewletService: IViewletService,
+		@IThemeService private themeService: IThemeService
 	) {
 		super(actionRunner, OpenEditorsView.computeExpandedBodySize(editorGroupService.getStacksModel()), !!settings[OpenEditorsView.MEMENTO_COLLAPSED], nls.localize({ key: 'openEditosrSection', comment: ['Open is an adjective'] }, "Open Editors Section"), keybindingService, contextMenuService);
 
@@ -80,6 +88,20 @@ export class OpenEditorsView extends AdaptiveCollapsibleViewletView {
 		titleSpan.textContent = nls.localize({ key: 'openEditors', comment: ['Open is an adjective'] }, "Open Editors");
 
 		this.dirtyCountElement = dom.append(titleDiv, $('.monaco-count-badge'));
+
+		this.toDispose.push((attachStylerCallback(this.themeService, { badgeBackground, badgeForeground, badgeBorder }, colors => {
+			const background = colors.badgeBackground ? colors.badgeBackground.toString() : null;
+			const foreground = colors.badgeForeground ? colors.badgeForeground.toString() : null;
+			const border = colors.badgeBorder ? colors.badgeBorder.toString() : null;
+
+			this.dirtyCountElement.style.backgroundColor = background;
+			this.dirtyCountElement.style.color = foreground;
+
+			this.dirtyCountElement.style.borderWidth = border ? '1px' : null;
+			this.dirtyCountElement.style.borderStyle = border ? 'solid' : null;
+			this.dirtyCountElement.style.borderColor = border;
+		})));
+
 		this.updateDirtyIndicator();
 
 		super.renderHeader(container);
@@ -115,22 +137,29 @@ export class OpenEditorsView extends AdaptiveCollapsibleViewletView {
 				indentPixels: 0,
 				twistiePixels: 22,
 				ariaLabel: nls.localize({ key: 'treeAriaLabel', comment: ['Open is an adjective'] }, "Open Editors: List of Active Files"),
-				showTwistie: false
+				showTwistie: false,
+				keyboardSupport: false
 			});
 
-		// Update open editors focus context
-		const viewerFocusTracker = dom.trackFocus(this.tree.getHTMLElement());
-		viewerFocusTracker.addFocusListener(() => {
-			setTimeout(() => {
-				this.openEditorsFocussedContext.set(true);
-				this.explorerFocussedContext.set(true);
-			}, 0 /* wait for any BLUR to happen */);
-		});
-		viewerFocusTracker.addBlurListener(() => {
-			this.openEditorsFocussedContext.reset();
-			this.explorerFocussedContext.reset();
-		});
-		this.toDispose.push(viewerFocusTracker);
+		// Theme styler
+		this.toDispose.push(attachListStyler(this.tree, this.themeService));
+
+		// Register to list service
+		this.toDispose.push(this.listService.register(this.tree, [this.explorerFocussedContext, this.openEditorsFocussedContext]));
+
+		// Open when selecting via keyboard
+		this.toDispose.push(this.tree.addListener('selection', event => {
+			if (event && event.payload && event.payload.origin === 'keyboard') {
+				controller.openEditor(this.tree.getFocus(), { pinned: false, sideBySide: false, preserveFocus: false });
+			}
+		}));
+
+		// Prevent collapsing of editor groups
+		this.toDispose.push(this.tree.addListener('item:collapsed', (event: IItemCollapseEvent) => {
+			if (event.item && event.item.getElement() instanceof EditorGroup) {
+				setTimeout(() => this.tree.expand(event.item.getElement())); // unwind from callback
+			}
+		}));
 
 		this.fullRefreshNeeded = true;
 		this.structuralTreeUpdate();
